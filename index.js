@@ -6,66 +6,85 @@ const axios = require("axios");
 // =========================================================================
 const TMDB_API_KEY = "7149c050508f704b3af18ad56a4c0908"; 
 const IDIOMA = "es-MX"; // Español Latino
+const NETFLIX_PROVIDER_ID = 8; // ID de Netflix en TMDB
 
-const GENRES_MAP = {
+// Mapeo de géneros de Películas (TMDB IDs)
+const MOVIE_GENRES = {
   "Acción": 28,
   "Animación": 16,
   "Aventura": 12,
   "Ciencia Ficción": 878,
   "Comedia": 35,
+  "Documental": 99,
   "Drama": 18,
   "Fantasía": 14,
+  "Misterio": 9648,
   "Romance": 10749,
   "Suspenso": 53,
   "Terror": 27
 };
 
-const ALL_GENRES = Object.keys(GENRES_MAP);
+// Mapeo de géneros de Series (TMDB IDs)
+const TV_GENRES = {
+  "Acción y Aventura": 10759,
+  "Animación": 16,
+  "Comedia": 35,
+  "Documental": 99,
+  "Drama": 18,
+  "Misterio": 9648,
+  "Niños": 10762,
+  "Reality": 10764,
+  "Sci-Fi y Fantasía": 10765,
+  "Soap / Telenovelas": 10766
+};
+
+const MOVIE_GENRES_KEYS = Object.keys(MOVIE_GENRES);
+const TV_GENRES_KEYS = Object.keys(TV_GENRES);
 
 // =========================================================================
 // 1. MANIFIESTO DEL ADDON
 // =========================================================================
 const manifest = {
   id: "org.sinopsis.latino",
-  version: "1.0.5", // Versión 1.0.5
+  version: "1.1.0", // Actualizamos versión
   name: "Sinopsis Latino",
-  description: "Catálogo de películas en español latino",
+  description: "Catálogo de Películas, Series y Netflix en español latino",
   resources: ["catalog", "meta"],
-  types: ["movie"],
+  types: ["movie", "series"],
   idPrefixes: ["tmdb:", "tt"],
   catalogs: [
     {
       type: "movie",
-      id: "sinopsis_latino_main",
-      name: "Sinopsis Latino",
+      id: "sinopsis_latino_movies",
+      name: "Sinopsis Latino - Películas",
       extra: [
         {
           name: "genre",
-          options: ALL_GENRES,
+          options: MOVIE_GENRES_KEYS,
+          isRequired: false
+        }
+      ]
+    },
+    {
+      type: "series",
+      id: "sinopsis_latino_series",
+      name: "Sinopsis Latino - Series",
+      extra: [
+        {
+          name: "genre",
+          options: TV_GENRES_KEYS,
           isRequired: false
         }
       ]
     },
     {
       type: "movie",
-      id: "comedia_latino",
-      name: "Películas de Comedia",
+      id: "sinopsis_netflix",
+      name: "Netflix",
       extra: [
         {
           name: "genre",
-          options: ALL_GENRES,
-          isRequired: false
-        }
-      ]
-    },
-    {
-      type: "movie",
-      id: "terror_latino",
-      name: "Películas de Terror",
-      extra: [
-        {
-          name: "genre",
-          options: ALL_GENRES,
+          options: MOVIE_GENRES_KEYS,
           isRequired: false
         }
       ]
@@ -76,25 +95,21 @@ const manifest = {
 const builder = new addonBuilder(manifest);
 
 // =========================================================================
-// FUNCIONES AUXILIARES CON FILTROS DE CALIDAD Y MAYOR CANTIDAD
+// FUNCIONES AUXILIARES: Consultas masivas a TMDB (Hasta 200 resultados)
 // =========================================================================
 
-// Carga 100 películas populares generales (5 páginas x 20)
-async function obtenerPopularesTMDB(numPages = 5) {
+// Obtiene Películas Populares
+async function obtenerPeliculasPopulares(numPages = 10) {
   try {
     const requests = [];
     for (let page = 1; page <= numPages; page++) {
       const url = `https://api.themoviedb.org/3/movie/popular?api_key=${TMDB_API_KEY}&language=${IDIOMA}&page=${page}`;
       requests.push(axios.get(url));
     }
-
     const responses = await Promise.all(requests);
     let allMovies = [];
-
-    responses.forEach(response => {
-      if (response.data && response.data.results) {
-        allMovies = allMovies.concat(response.data.results);
-      }
+    responses.forEach(res => {
+      if (res.data && res.data.results) allMovies = allMovies.concat(res.data.results);
     });
 
     return allMovies.map(movie => ({
@@ -105,28 +120,23 @@ async function obtenerPopularesTMDB(numPages = 5) {
       description: movie.overview
     }));
   } catch (error) {
-    console.error("Error al consultar populares en TMDB:", error.message);
+    console.error("Error al obtener películas populares:", error.message);
     return [];
   }
 }
 
-// Carga 100 películas filtradas por género con un mínimo de votos
-async function obtenerPeliculasDeTMDB(genreId, numPages = 5) {
+// Obtiene Películas por Género
+async function obtenerPeliculasPorGenero(genreId, numPages = 10) {
   try {
     const requests = [];
     for (let page = 1; page <= numPages; page++) {
-      // Exigimos vote_count.gte=100 para filtrar contenidos irrelevantes o mal mapeados
       const url = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=${IDIOMA}&with_genres=${genreId}&sort_by=popularity.desc&vote_count.gte=100&page=${page}`;
       requests.push(axios.get(url));
     }
-
     const responses = await Promise.all(requests);
     let allMovies = [];
-
-    responses.forEach(response => {
-      if (response.data && response.data.results) {
-        allMovies = allMovies.concat(response.data.results);
-      }
+    responses.forEach(res => {
+      if (res.data && res.data.results) allMovies = allMovies.concat(res.data.results);
     });
 
     return allMovies.map(movie => ({
@@ -137,66 +147,171 @@ async function obtenerPeliculasDeTMDB(genreId, numPages = 5) {
       description: movie.overview
     }));
   } catch (error) {
-    console.error("Error al consultar género en TMDB:", error.message);
+    console.error("Error al obtener películas por género:", error.message);
+    return [];
+  }
+}
+
+// Obtiene Series Populares
+async function obtenerSeriesPopulares(numPages = 10) {
+  try {
+    const requests = [];
+    for (let page = 1; page <= numPages; page++) {
+      const url = `https://api.themoviedb.org/3/tv/popular?api_key=${TMDB_API_KEY}&language=${IDIOMA}&page=${page}`;
+      requests.push(axios.get(url));
+    }
+    const responses = await Promise.all(requests);
+    let allSeries = [];
+    responses.forEach(res => {
+      if (res.data && res.data.results) allSeries = allSeries.concat(res.data.results);
+    });
+
+    return allSeries.map(show => ({
+      id: `tmdb:${show.id}`,
+      type: "series",
+      name: show.name,
+      poster: show.poster_path ? `https://image.tmdb.org/t/p/w500${show.poster_path}` : null,
+      description: show.overview
+    }));
+  } catch (error) {
+    console.error("Error al obtener series populares:", error.message);
+    return [];
+  }
+}
+
+// Obtiene Series por Género
+async function obtenerSeriesPorGenero(genreId, numPages = 10) {
+  try {
+    const requests = [];
+    for (let page = 1; page <= numPages; page++) {
+      const url = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&language=${IDIOMA}&with_genres=${genreId}&sort_by=popularity.desc&vote_count.gte=50&page=${page}`;
+      requests.push(axios.get(url));
+    }
+    const responses = await Promise.all(requests);
+    let allSeries = [];
+    responses.forEach(res => {
+      if (res.data && res.data.results) allSeries = allSeries.concat(res.data.results);
+    });
+
+    return allSeries.map(show => ({
+      id: `tmdb:${show.id}`,
+      type: "series",
+      name: show.name,
+      poster: show.poster_path ? `https://image.tmdb.org/t/p/w500${show.poster_path}` : null,
+      description: show.overview
+    }));
+  } catch (error) {
+    console.error("Error al obtener series por género:", error.message);
+    return [];
+  }
+}
+
+// Obtiene Todo el Contenido de Netflix
+async function obtenerContenidoNetflix(genreId = null, numPages = 10) {
+  try {
+    const requests = [];
+    for (let page = 1; page <= numPages; page++) {
+      let url = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=${IDIOMA}&with_watch_providers=${NETFLIX_PROVIDER_ID}&watch_region=AR&sort_by=popularity.desc&page=${page}`;
+      if (genreId) {
+        url += `&with_genres=${genreId}`;
+      }
+      requests.push(axios.get(url));
+    }
+    const responses = await Promise.all(requests);
+    let netflixMovies = [];
+    responses.forEach(res => {
+      if (res.data && res.data.results) netflixMovies = netflixMovies.concat(res.data.results);
+    });
+
+    return netflixMovies.map(movie => ({
+      id: `tmdb:${movie.id}`,
+      type: "movie",
+      name: movie.title,
+      poster: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : null,
+      description: movie.overview
+    }));
+  } catch (error) {
+    console.error("Error al obtener contenido de Netflix:", error.message);
     return [];
   }
 }
 
 // =========================================================================
-// 2. MANEJADOR DE CATÁLOGO
+// 2. MANEJADOR DE CATÁLOGOS
 // =========================================================================
 builder.defineCatalogHandler(async (args) => {
-  // 1. Si el usuario elige un género del menú
-  if (args.extra && args.extra.genre && GENRES_MAP[args.extra.genre]) {
-    const genreId = GENRES_MAP[args.extra.genre];
-    const peliculas = await obtenerPeliculasDeTMDB(genreId, 5); // 100 películas
-    return { metas: peliculas };
+  const { type, id, extra } = args;
+
+  // --- CATÁLOGO DE NETFLIX ---
+  if (id === "sinopsis_netflix") {
+    if (extra && extra.genre && MOVIE_GENRES[extra.genre]) {
+      const genreId = MOVIE_GENRES[extra.genre];
+      const metas = await obtenerContenidoNetflix(genreId, 10);
+      return { metas };
+    } else {
+      const metas = await obtenerContenidoNetflix(null, 10);
+      return { metas };
+    }
   }
 
-  // 2. Carga predeterminada por sección
-  if (args.id === "sinopsis_latino_main") {
-    const peliculas = await obtenerPopularesTMDB(5); // 100 películas
-    return { metas: peliculas };
-  } else if (args.id === "comedia_latino") {
-    const peliculas = await obtenerPeliculasDeTMDB(GENRES_MAP["Comedia"], 5); // 100 películas
-    return { metas: peliculas };
-  } else if (args.id === "terror_latino") {
-    const peliculas = await obtenerPeliculasDeTMDB(GENRES_MAP["Terror"], 5); // 100 películas
-    return { metas: peliculas };
+  // --- CATÁLOGO DE PELÍCULAS ---
+  if (type === "movie" && id === "sinopsis_latino_movies") {
+    if (extra && extra.genre && MOVIE_GENRES[extra.genre]) {
+      const genreId = MOVIE_GENRES[extra.genre];
+      const metas = await obtenerPeliculasPorGenero(genreId, 10);
+      return { metas };
+    } else {
+      const metas = await obtenerPeliculasPopulares(10);
+      return { metas };
+    }
+  }
+
+  // --- CATÁLOGO DE SERIES ---
+  if (type === "series" && id === "sinopsis_latino_series") {
+    if (extra && extra.genre && TV_GENRES[extra.genre]) {
+      const genreId = TV_GENRES[extra.genre];
+      const metas = await obtenerSeriesPorGenero(genreId, 10);
+      return { metas };
+    } else {
+      const metas = await obtenerSeriesPopulares(10);
+      return { metas };
+    }
   }
 
   return { metas: [] };
 });
 
 // =========================================================================
-// 3. MANEJADOR DE METADATOS
+// 3. MANEJADOR DE METADATOS (DETALLES Y FICHAS)
 // =========================================================================
 builder.defineMetaHandler(async (args) => {
-  if (args.type === "movie" && args.id.startsWith("tmdb:")) {
+  if (args.id.startsWith("tmdb:")) {
     const tmdbId = args.id.split(":")[1];
+    const isMovie = args.type === "movie";
+    const endpoint = isMovie ? "movie" : "tv";
 
     try {
-      const url = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=${IDIOMA}&append_to_response=external_ids`;
+      const url = `https://api.themoviedb.org/3/${endpoint}/${tmdbId}?api_key=${TMDB_API_KEY}&language=${IDIOMA}&append_to_response=external_ids`;
       const response = await axios.get(url);
-      const movie = response.data;
+      const data = response.data;
 
-      const imdbId = movie.external_ids && movie.external_ids.imdb_id ? movie.external_ids.imdb_id : args.id;
+      const imdbId = data.external_ids && data.external_ids.imdb_id ? data.external_ids.imdb_id : args.id;
 
       return {
         meta: {
           id: args.id,
           imdb_id: imdbId,
-          type: "movie",
-          name: movie.title,
-          poster: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : null,
-          background: movie.backdrop_path ? `https://image.tmdb.org/t/p/original${movie.backdrop_path}` : null,
-          description: movie.overview || "Sin descripción disponible en español.",
-          releaseInfo: movie.release_date ? movie.release_date.substring(0, 4) : "",
-          genres: movie.genres ? movie.genres.map(g => g.name) : []
+          type: args.type,
+          name: isMovie ? data.title : data.name,
+          poster: data.poster_path ? `https://image.tmdb.org/t/p/w500${data.poster_path}` : null,
+          background: data.backdrop_path ? `https://image.tmdb.org/t/p/original${data.backdrop_path}` : null,
+          description: data.overview || "Sin descripción disponible en español.",
+          releaseInfo: isMovie ? (data.release_date ? data.release_date.substring(0, 4) : "") : (data.first_air_date ? data.first_air_date.substring(0, 4) : ""),
+          genres: data.genres ? data.genres.map(g => g.name) : []
         }
       };
     } catch (error) {
-      console.error("Error al obtener detalles de la película:", error.message);
+      console.error("Error al obtener detalles:", error.message);
       return { meta: null };
     }
   }
