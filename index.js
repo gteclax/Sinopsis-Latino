@@ -17,34 +17,39 @@ const GENRES_MAP = {
 // 1. MANIFIESTO DEL ADDON
 // =========================================================================
 const manifest = {
-    id: "org.sinopsislatino.official",
-    version: "1.1.0",
-    name: "Sinopsis Latino",
-    description: "Catálogo y descripciones en Español Latino con géneros y más contenido",
-    resources: ["catalog", "meta"],
-    types: ["movie"],
-    catalogs: [
+  id: "org.sinopsis.latino",
+  version: "1.0.0",
+  name: "Sinopsis Latino",
+  description: "Catálogo de películas en español latino",
+  resources: ["catalog", "stream"],
+  types: ["movie"],
+  idPrefixes: ["tt"],
+  catalogs: [
+    {
+      type: "movie",
+      id: "comedia_latino",
+      name: "Películas de Comedia",
+      extra: [
         {
-            type: "movie",
-            id: "sinopsis_latino_populares",
-            name: "Sinopsis Latino",
-            extra: [
-                { 
-                    name: "genre", 
-                    options: ["Todos", "Terror", "Comedia"],
-                    isRequired: false 
-                },
-                { 
-                    name: "search", 
-                    isRequired: false 
-                },
-                {
-                    name: "skip", // Permite la paginación para cargar MÁS películas al hacer scroll
-                    isRequired: false
-                }
-            ]
+          name: "genre",
+          options: ["Comedia", "Terror", "Acción", "Drama", "Ciencia Ficción", "Animación", "Romance", "Suspenso"],
+          isRequired: false
         }
-    ]
+      ]
+    },
+    {
+      type: "movie",
+      id: "terror_latino",
+      name: "Películas de Terror",
+      extra: [
+        {
+          name: "genre",
+          options: ["Comedia", "Terror", "Acción", "Drama", "Ciencia Ficción", "Animación", "Romance", "Suspenso"],
+          isRequired: false
+        }
+      ]
+    }
+  ]
 };
 
 const builder = new addonBuilder(manifest);
@@ -52,45 +57,42 @@ const builder = new addonBuilder(manifest);
 // =========================================================================
 // 2. MANEJADOR DE CATÁLOGO Y BÚSQUEDA
 // =========================================================================
-builder.defineCatalogHandler(async (args) => {
-    try {
-        // Cálculo de página según el scroll de Stremio (Stremio pide de a 100 elementos)
-        const skip = args.extra && args.extra.skip ? parseInt(args.extra.skip) : 0;
-        const page = Math.floor(skip / 20) + 1; 
+// Importamos el SDK de Stremio
+var stremioSdk = require("stremio-addon-sdk");
+var addonBuilder = stremioSdk.addonBuilder;
 
-        let url = "";
+// Creamos la instancia del add-on usando el manifest
+var builder = new addonBuilder(manifest);
 
-        // 1. Si el usuario busca algo por texto:
-        if (args.extra && args.extra.search) {
-            const query = encodeURIComponent(args.extra.search);
-            url = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&language=${IDIOMA}&query=${query}&page=${page}`;
-        } 
-        // 2. Si el usuario selecciona un género específico (Terror o Comedia):
-        else if (args.extra && args.extra.genre && GENRES_MAP[args.extra.genre]) {
-            const genreId = GENRES_MAP[args.extra.genre];
-            url = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=${IDIOMA}&with_genres=${genreId}&sort_by=popularity.desc&page=${page}`;
-        } 
-        // 3. Catálogo general por defecto (Populares):
-        else {
-            url = `https://api.themoviedb.org/3/movie/popular?api_key=${TMDB_API_KEY}&language=${IDIOMA}&page=${page}`;
-        }
+// Definimos la función que maneja la entrega del catálogo
+builder.defineCatalogHandler(function (args) {
+  return new Promise(function (resolve) {
+    var peliculas = [];
+    var idDelCatalogo = args.id; // Puede ser "comedia_latino" o "terror_latino"
+    var extra = args.extra;     // Contiene los filtros seleccionados por el usuario
 
-        const response = await axios.get(url);
-
-        const metas = response.data.results.map(movie => ({
-            id: `tmdb:${movie.id}`,
-            type: "movie",
-            name: movie.title,
-            poster: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : null,
-            description: movie.overview || "Sin descripción disponible en español."
-        }));
-
-        return { metas };
-    } catch (error) {
-        console.error("Error al obtener catálogo/búsqueda:", error.message);
-        return { metas: [] };
+    // 1. Verificamos cuál catálogo solicitó la interfaz de Stremio
+    if (idDelCatalogo === "comedia_latino") {
+      peliculas = obtenerPeliculasPorGenero("Comedia");
+    } else if (idDelCatalogo === "terror_latino") {
+      peliculas = obtenerPeliculasPorGenero("Terror");
     }
+
+    // 2. Si el usuario seleccionó un género en el menú desplegable, filtramos la lista
+    if (extra && extra.genre) {
+      var generoBuscado = extra.genre;
+
+      peliculas = peliculas.filter(function (pelicula) {
+        // Comprueba si el género buscado está en el arreglo de géneros de la película
+        return pelicula.genres.includes(generoBuscado);
+      });
+    }
+
+    // 3. Enviamos la respuesta final a Stremio
+    resolve({ metas: peliculas });
+  });
 });
+
 
 // =========================================================================
 // 3. MANEJADOR DE METADATOS
