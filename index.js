@@ -27,7 +27,7 @@ const ALL_GENRES = Object.keys(GENRES_MAP);
 // =========================================================================
 const manifest = {
   id: "org.sinopsis.latino",
-  version: "1.0.4", // Incrementamos versión
+  version: "1.0.5", // Versión 1.0.5
   name: "Sinopsis Latino",
   description: "Catálogo de películas en español latino",
   resources: ["catalog", "meta"],
@@ -76,11 +76,11 @@ const manifest = {
 const builder = new addonBuilder(manifest);
 
 // =========================================================================
-// FUNCIONES AUXILIARES: Consultas a TMDB con Paginación
+// FUNCIONES AUXILIARES CON FILTROS DE CALIDAD Y MAYOR CANTIDAD
 // =========================================================================
 
-// Trae las primeras 'numPages' páginas de populares (cada página = 20 películas)
-async function obtenerPopularesTMDB(numPages = 3) {
+// Carga 100 películas populares generales (5 páginas x 20)
+async function obtenerPopularesTMDB(numPages = 5) {
   try {
     const requests = [];
     for (let page = 1; page <= numPages; page++) {
@@ -110,12 +110,13 @@ async function obtenerPopularesTMDB(numPages = 3) {
   }
 }
 
-// Trae las primeras 'numPages' páginas por género
-async function obtenerPeliculasDeTMDB(genreId, numPages = 3) {
+// Carga 100 películas filtradas por género con un mínimo de votos
+async function obtenerPeliculasDeTMDB(genreId, numPages = 5) {
   try {
     const requests = [];
     for (let page = 1; page <= numPages; page++) {
-      const url = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=${IDIOMA}&with_genres=${genreId}&sort_by=popularity.desc&page=${page}`;
+      // Exigimos vote_count.gte=100 para filtrar contenidos irrelevantes o mal mapeados
+      const url = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=${IDIOMA}&with_genres=${genreId}&sort_by=popularity.desc&vote_count.gte=100&page=${page}`;
       requests.push(axios.get(url));
     }
 
@@ -145,22 +146,22 @@ async function obtenerPeliculasDeTMDB(genreId, numPages = 3) {
 // 2. MANEJADOR DE CATÁLOGO
 // =========================================================================
 builder.defineCatalogHandler(async (args) => {
-  // 1. Si el usuario selecciona un género en el menú desplegable
+  // 1. Si el usuario elige un género del menú
   if (args.extra && args.extra.genre && GENRES_MAP[args.extra.genre]) {
     const genreId = GENRES_MAP[args.extra.genre];
-    const peliculas = await obtenerPeliculasDeTMDB(genreId, 3); // Carga 60 películas
+    const peliculas = await obtenerPeliculasDeTMDB(genreId, 5); // 100 películas
     return { metas: peliculas };
   }
 
-  // 2. Carga por defecto según la sección
+  // 2. Carga predeterminada por sección
   if (args.id === "sinopsis_latino_main") {
-    const peliculas = await obtenerPopularesTMDB(3); // Carga 60 películas
+    const peliculas = await obtenerPopularesTMDB(5); // 100 películas
     return { metas: peliculas };
   } else if (args.id === "comedia_latino") {
-    const peliculas = await obtenerPeliculasDeTMDB(GENRES_MAP["Comedia"], 3); // Carga 60 películas
+    const peliculas = await obtenerPeliculasDeTMDB(GENRES_MAP["Comedia"], 5); // 100 películas
     return { metas: peliculas };
   } else if (args.id === "terror_latino") {
-    const peliculas = await obtenerPeliculasDeTMDB(GENRES_MAP["Terror"], 3); // Carga 60 películas
+    const peliculas = await obtenerPeliculasDeTMDB(GENRES_MAP["Terror"], 5); // 100 películas
     return { metas: peliculas };
   }
 
