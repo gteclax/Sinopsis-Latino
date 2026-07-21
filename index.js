@@ -6,9 +6,8 @@ const axios = require("axios");
 // =========================================================================
 const TMDB_API_KEY = "7149c050508f704b3af18ad56a4c0908"; 
 const IDIOMA = "es-MX"; // Español Latino
-const NETFLIX_PROVIDER_ID = 8; // ID de Netflix en TMDB
+const NETFLIX_PROVIDER_ID = 8;
 
-// Mapeo de géneros de Películas (TMDB IDs)
 const MOVIE_GENRES = {
   "Acción": 28,
   "Animación": 16,
@@ -24,7 +23,6 @@ const MOVIE_GENRES = {
   "Terror": 27
 };
 
-// Mapeo de géneros de Series (TMDB IDs)
 const TV_GENRES = {
   "Acción y Aventura": 10759,
   "Animación": 16,
@@ -42,13 +40,13 @@ const MOVIE_GENRES_KEYS = Object.keys(MOVIE_GENRES);
 const TV_GENRES_KEYS = Object.keys(TV_GENRES);
 
 // =========================================================================
-// 1. MANIFIESTO DEL ADDON
+// 1. MANIFIESTO DEL ADDON (HABILITANDO BÚSQUEDAS)
 // =========================================================================
 const manifest = {
   id: "org.sinopsis.latino",
-  version: "1.1.0", // Actualizamos versión
+  version: "1.2.0", // Subimos versión
   name: "Sinopsis Latino",
-  description: "Catálogo de Películas, Series y Netflix en español latino",
+  description: "Catálogo de Películas, Series y Netflix en español latino con soporte para búsquedas",
   resources: ["catalog", "meta"],
   types: ["movie", "series"],
   idPrefixes: ["tmdb:", "tt"],
@@ -58,11 +56,8 @@ const manifest = {
       id: "sinopsis_latino_movies",
       name: "Sinopsis Latino - Películas",
       extra: [
-        {
-          name: "genre",
-          options: MOVIE_GENRES_KEYS,
-          isRequired: false
-        }
+        { name: "search", isRequired: false }, // Permite búsqueda en la lupa
+        { name: "genre", options: MOVIE_GENRES_KEYS, isRequired: false }
       ]
     },
     {
@@ -70,11 +65,8 @@ const manifest = {
       id: "sinopsis_latino_series",
       name: "Sinopsis Latino - Series",
       extra: [
-        {
-          name: "genre",
-          options: TV_GENRES_KEYS,
-          isRequired: false
-        }
+        { name: "search", isRequired: false }, // Permite búsqueda en la lupa
+        { name: "genre", options: TV_GENRES_KEYS, isRequired: false }
       ]
     },
     {
@@ -82,11 +74,8 @@ const manifest = {
       id: "sinopsis_netflix",
       name: "Netflix",
       extra: [
-        {
-          name: "genre",
-          options: MOVIE_GENRES_KEYS,
-          isRequired: false
-        }
+        { name: "search", isRequired: false },
+        { name: "genre", options: MOVIE_GENRES_KEYS, isRequired: false }
       ]
     }
   ]
@@ -95,11 +84,32 @@ const manifest = {
 const builder = new addonBuilder(manifest);
 
 // =========================================================================
-// FUNCIONES AUXILIARES: Consultas masivas a TMDB (Hasta 200 resultados)
+// FUNCIONES AUXILIARES DE CONSULTA
 // =========================================================================
 
-// Obtiene Películas Populares
-async function obtenerPeliculasPopulares(numPages = 10) {
+// Función para BÚSQUEDAS
+async function buscarEnTMDB(query, type = "movie") {
+  try {
+    const endpoint = type === "movie" ? "movie" : "tv";
+    const url = `https://api.themoviedb.org/3/search/${endpoint}?api_key=${TMDB_API_KEY}&language=${IDIOMA}&query=${encodeURIComponent(query)}&page=1`;
+    const response = await axios.get(url);
+    
+    if (!response.data || !response.data.results) return [];
+
+    return response.data.results.map(item => ({
+      id: `tmdb:${item.id}`,
+      type: type,
+      name: type === "movie" ? item.title : item.name,
+      poster: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : null,
+      description: item.overview
+    }));
+  } catch (error) {
+    console.error("Error en la búsqueda:", error.message);
+    return [];
+  }
+}
+
+async function obtenerPeliculasPopulares(numPages = 5) {
   try {
     const requests = [];
     for (let page = 1; page <= numPages; page++) {
@@ -125,8 +135,7 @@ async function obtenerPeliculasPopulares(numPages = 10) {
   }
 }
 
-// Obtiene Películas por Género
-async function obtenerPeliculasPorGenero(genreId, numPages = 10) {
+async function obtenerPeliculasPorGenero(genreId, numPages = 5) {
   try {
     const requests = [];
     for (let page = 1; page <= numPages; page++) {
@@ -152,8 +161,7 @@ async function obtenerPeliculasPorGenero(genreId, numPages = 10) {
   }
 }
 
-// Obtiene Series Populares
-async function obtenerSeriesPopulares(numPages = 10) {
+async function obtenerSeriesPopulares(numPages = 5) {
   try {
     const requests = [];
     for (let page = 1; page <= numPages; page++) {
@@ -179,8 +187,7 @@ async function obtenerSeriesPopulares(numPages = 10) {
   }
 }
 
-// Obtiene Series por Género
-async function obtenerSeriesPorGenero(genreId, numPages = 10) {
+async function obtenerSeriesPorGenero(genreId, numPages = 5) {
   try {
     const requests = [];
     for (let page = 1; page <= numPages; page++) {
@@ -206,15 +213,12 @@ async function obtenerSeriesPorGenero(genreId, numPages = 10) {
   }
 }
 
-// Obtiene Todo el Contenido de Netflix
-async function obtenerContenidoNetflix(genreId = null, numPages = 10) {
+async function obtenerContenidoNetflix(genreId = null, numPages = 5) {
   try {
     const requests = [];
     for (let page = 1; page <= numPages; page++) {
       let url = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=${IDIOMA}&with_watch_providers=${NETFLIX_PROVIDER_ID}&watch_region=AR&sort_by=popularity.desc&page=${page}`;
-      if (genreId) {
-        url += `&with_genres=${genreId}`;
-      }
+      if (genreId) url += `&with_genres=${genreId}`;
       requests.push(axios.get(url));
     }
     const responses = await Promise.all(requests);
@@ -237,43 +241,42 @@ async function obtenerContenidoNetflix(genreId = null, numPages = 10) {
 }
 
 // =========================================================================
-// 2. MANEJADOR DE CATÁLOGOS
+// 2. MANEJADOR DE CATÁLOGOS Y BÚSQUEDA
 // =========================================================================
 builder.defineCatalogHandler(async (args) => {
   const { type, id, extra } = args;
 
-  // --- CATÁLOGO DE NETFLIX ---
-  if (id === "sinopsis_netflix") {
-    if (extra && extra.genre && MOVIE_GENRES[extra.genre]) {
-      const genreId = MOVIE_GENRES[extra.genre];
-      const metas = await obtenerContenidoNetflix(genreId, 10);
-      return { metas };
-    } else {
-      const metas = await obtenerContenidoNetflix(null, 10);
-      return { metas };
-    }
+  // 1. SI EL USUARIO HACE UNA BÚSQUEDA DESDE LA LUPA DE STREMIO
+  if (extra && extra.search) {
+    const metas = await buscarEnTMDB(extra.search, type);
+    return { metas };
   }
 
-  // --- CATÁLOGO DE PELÍCULAS ---
+  // 2. CATÁLOGO NETFLIX
+  if (id === "sinopsis_netflix") {
+    const genreId = extra && extra.genre ? MOVIE_GENRES[extra.genre] : null;
+    const metas = await obtenerContenidoNetflix(genreId, 5);
+    return { metas };
+  }
+
+  // 3. CATÁLOGO PELÍCULAS
   if (type === "movie" && id === "sinopsis_latino_movies") {
     if (extra && extra.genre && MOVIE_GENRES[extra.genre]) {
-      const genreId = MOVIE_GENRES[extra.genre];
-      const metas = await obtenerPeliculasPorGenero(genreId, 10);
+      const metas = await obtenerPeliculasPorGenero(MOVIE_GENRES[extra.genre], 5);
       return { metas };
     } else {
-      const metas = await obtenerPeliculasPopulares(10);
+      const metas = await obtenerPeliculasPopulares(5);
       return { metas };
     }
   }
 
-  // --- CATÁLOGO DE SERIES ---
+  // 4. CATÁLOGO SERIES
   if (type === "series" && id === "sinopsis_latino_series") {
     if (extra && extra.genre && TV_GENRES[extra.genre]) {
-      const genreId = TV_GENRES[extra.genre];
-      const metas = await obtenerSeriesPorGenero(genreId, 10);
+      const metas = await obtenerSeriesPorGenero(TV_GENRES[extra.genre], 5);
       return { metas };
     } else {
-      const metas = await obtenerSeriesPopulares(10);
+      const metas = await obtenerSeriesPopulares(5);
       return { metas };
     }
   }
@@ -282,7 +285,7 @@ builder.defineCatalogHandler(async (args) => {
 });
 
 // =========================================================================
-// 3. MANEJADOR DE METADATOS (DETALLES Y FICHAS)
+// 3. MANEJADOR DE METADATOS (INCLUYE ID DE IMDB PARA TORRENTIO)
 // =========================================================================
 builder.defineMetaHandler(async (args) => {
   if (args.id.startsWith("tmdb:")) {
@@ -299,7 +302,7 @@ builder.defineMetaHandler(async (args) => {
 
       return {
         meta: {
-          id: args.id,
+          id: imdbId,
           imdb_id: imdbId,
           type: args.type,
           name: isMovie ? data.title : data.name,
