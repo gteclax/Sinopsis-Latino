@@ -18,7 +18,7 @@ const GENRES_MAP = {
 // =========================================================================
 const manifest = {
   id: "org.sinopsis.latino",
-  version: "1.0.0",
+  version: "1.0.1", // <-- Subir la versión (ej. de 1.0.0 a 1.0.1)
   name: "Sinopsis Latino",
   description: "Catálogo de películas en español latino",
   resources: ["catalog", "stream"],
@@ -32,7 +32,8 @@ const manifest = {
       extra: [
         {
           name: "genre",
-          options: ["Comedia", "Terror", "Acción", "Drama", "Ciencia Ficción", "Animación", "Romance", "Suspenso"],
+          // Poner AQUÍ todos los géneros que quieres que aparezcan en la lista
+          options: ["Acción", "Animación", "Aventura", "Ciencia Ficción", "Comedia", "Drama", "Fantasía", "Romance", "Suspenso", "Terror"],
           isRequired: false
         }
       ]
@@ -44,14 +45,13 @@ const manifest = {
       extra: [
         {
           name: "genre",
-          options: ["Comedia", "Terror", "Acción", "Drama", "Ciencia Ficción", "Animación", "Romance", "Suspenso"],
+          options: ["Acción", "Animación", "Aventura", "Ciencia Ficción", "Comedia", "Drama", "Fantasía", "Romance", "Suspenso", "Terror"],
           isRequired: false
         }
       ]
     }
   ]
 };
-
 const builder = new addonBuilder(manifest);
 
 // =========================================================================
